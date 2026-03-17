@@ -1,21 +1,22 @@
-FROM python:3.12-slim
+FROM python:3.11.8-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
-ENV PYTHONPATH=/app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libgl1 \
-    git \
- && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /app/
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY . /app
 
-EXPOSE 8501
+# Create a non-root user and give it ownership of the application directory
+RUN useradd -m appuser && chown -R appuser /app
 
-CMD ["streamlit", "run", "marlin_main/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+# Switch to the non-root user for running the application
+USER appuser
 
+EXPOSE 8080
+
+CMD ["uvicorn", "marlin_dhis2:app", "--host", "0.0.0.0", "--port", "8080"]
