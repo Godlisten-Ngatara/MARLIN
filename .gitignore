@@ -1,2 +1,6 @@
 .venv/
 .github/agents/
+
+README.local.md
+
+copilot-instructions.md
