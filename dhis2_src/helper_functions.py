@@ -1,16 +1,7 @@
-import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from pathlib import Path
-from PIL import Image
 import torch
-import time
-import seaborn as sns
-import matplotlib.pyplot as plt
-import hashlib
-import torch.nn as nn
-import torch.optim as optim
+
 
 from .inference_model_exp import LSTM_EIR, LSTM_Incidence
 from .inference_sequence_creator import create_causal_sequences, create_sequences_assymetric
@@ -21,26 +12,7 @@ inverse_log_transform = lambda x: np.exp(x) - 1e-8
 
 
 # ---------------- Helpers ----------------
-def ts_fig(t, y, title, color, show_markers=False, opacity=1.0):
-    fig = go.Figure()
-    mode = "markers" if show_markers else "lines"
-    fig.add_trace(go.Scatter(
-        x=t, y=y, mode=mode,
-        line=dict(color=color, width=2),
-        marker=dict(color=color, size=5, opacity=opacity),
-        opacity=opacity,
-        name=title
-    ))
-    fig.update_layout(
-        height=240,
-        margin=dict(l=40, r=10, t=30, b=30),
-        xaxis_title="Month(s)",
-        yaxis_title=title,
-        template="simple_white"
-    )
-    return fig
 
-@st.cache_resource
 def load_models(model_eir_path, model_inc_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -58,7 +30,6 @@ def load_models(model_eir_path, model_inc_path):
 
 def preprocess_data(df):
     if not pd.api.types.is_numeric_dtype(df['prev_true']):
-        st.error("🚨 The selected prevalence column is invalid. It contains non-numeric values.")
         return None, False  
     
     has_true_values = {'EIR_true', 'incall'}.issubset(df.columns)
@@ -80,15 +51,7 @@ def adjust_trailing_zero_prevalence(df, prevalence_column='prev_true', min_val=0
         df.loc[zeros_mask, prevalence_column] = random_values
     return df
 
-@st.cache_data
-def load_uploaded_csv(file_content):
-    return pd.read_csv(file_content)
 
-def get_file_hash(file):
-    return hashlib.md5(file.getvalue()).hexdigest()
-
-# ---------------- Inline Emulator Functions ----------------
-@st.cache_data(show_spinner="🔄 Running model predictions...")
 def generate_predictions_per_run(data, selected_runs, run_column, window_size, _model_eir, _model_inc, _device, has_true_values):
     run_results = {}
 
@@ -134,138 +97,3 @@ def generate_predictions_per_run(data, selected_runs, run_column, window_size, _
         }
 
     return run_results
-
-@st.cache_data
-def compute_global_yaxis_limits(run_results):
-    all_prev, all_eir, all_inc = [], [], []
-    for result in run_results.values():
-        run_data = result["original_data"]
-        all_prev.extend(run_data['prev_true'].values)
-        all_inc.extend(result['inc_preds_unscaled'][:, 0])
-        all_eir.extend(result['eir_preds_unscaled'][:, 0])
-
-    prev_min, prev_max = 0, max(all_prev) * 1.1 if all_prev else (0, 1)
-    eir_min, eir_max = 0, max(all_eir) * 1.1 if all_eir else (0, 1)
-    inc_min, inc_max = 0, max(all_inc) * 1.1 if all_inc else (0, 1)
-
-    return (prev_min, prev_max), (eir_min, eir_max), (inc_min, inc_max)
-
-def plot_predictions(run_results, run_column, time_column, selected_runs,
-                     log_eir, log_inc, log_all, prev_limits, eir_limits, inc_limits):
-    is_string_time = not pd.api.types.is_numeric_dtype(
-        next(iter(run_results.values()))['original_data'][time_column]
-    )
-
-    if is_string_time:
-        time_labels = next(iter(run_results.values()))['original_data'][time_column].unique()
-        time_values = np.arange(len(time_labels))
-    else:
-        time_values = next(iter(run_results.values()))['original_data'][time_column].astype(float) / 365.25
-        time_labels = None
-
-    num_plots = len(selected_runs)
-    fig, axes = plt.subplots(num_plots, 3, figsize=(18, 5 * num_plots), sharex=True)
-    if num_plots == 1:
-        axes = np.expand_dims(axes, axis=0)
-
-    colors = sns.color_palette("muted", 3)
-    data_to_download = []
-
-    prev_min, prev_max = prev_limits
-    eir_min, eir_max = eir_limits
-    inc_min, inc_max = inc_limits
-
-    for i, run in enumerate(selected_runs):
-        result = run_results.get(run)
-        if result is None:
-            st.warning(f"⚠️ No prediction result available for run '{run}'")
-            continue
-
-        eir_preds_unscaled = result["eir_preds_unscaled"]
-        inc_preds_unscaled = result["inc_preds_unscaled"]
-        run_data = result["original_data"]
-        y_eir_unscaled = inverse_log_transform(result["y_eir_true"]) if result["y_eir_true"] is not None else None
-
-        time_values_plot = time_values[:len(eir_preds_unscaled)]
-        min_len = len(eir_preds_unscaled)
-
-        plot_data = [
-            {"title": "Prevalence", "pred": None, "true": run_data['prev_true'].values[:min_len]},
-            {"title": "EIR", "pred": eir_preds_unscaled[:min_len, 0],
-             "true": y_eir_unscaled[:min_len, 0] if y_eir_unscaled is not None else None}, #this should be reviewed later
-            {"title": "Incidence", "pred": inc_preds_unscaled[:min_len, 0], "true": None}
-        ]
-
-        log_scales = {
-            "Prevalence": log_all,
-            "EIR": log_eir or log_all,
-            "Incidence": log_inc or log_all
-        }
-
-        y_limits = {
-            "Prevalence": (prev_min, prev_max),
-            "EIR": (eir_min, eir_max),
-            "Incidence": (inc_min, inc_max)
-        }
-
-        # plot all three subplots
-        for ax, data, color in zip(axes[i], plot_data, colors):
-            title = data["title"]
-            pred = data["pred"]
-            true = data["true"]
-            x_vals = time_values_plot
-
-            if true is not None:
-                ax.plot(x_vals, true, color="purple", linestyle="-", label=f"True {title}", linewidth=2.5)
-            if title != "Prevalence" and pred is not None:
-                ax.plot(x_vals, pred, linestyle="--", color=color, label=f"Estimated {title}", linewidth=2.5)
-
-            if log_scales[title]:
-                ax.set_yscale('log')
-
-            ax.set_ylim(*y_limits[title])
-            ax.set_title(f"{run} - {title}", fontsize=14, color="#FF4B4B")
-            ax.set_ylabel(title, fontsize=12)
-            ax.legend()
-
-        # build dataframe for download once per run (outside plotting loop)
-        df_export = pd.DataFrame({
-            "run": run,
-            "time": run_data[time_column].values[:min_len],
-            "Prevalence": plot_data[0]["true"],
-            "Estimated EIR": plot_data[1]["pred"],
-            "Estimated Incidence": plot_data[2]["pred"]
-        })
-        data_to_download.append(df_export)
-
-    # handle x-axis labels on last row
-    for ax in axes[-1]:
-        if is_string_time:
-            tick_indices = np.arange(0, len(time_values_plot), step=6, dtype=int)
-            ax.set_xticks(time_values_plot[tick_indices])
-            ax.set_xticklabels(np.array(time_labels)[tick_indices], rotation=45, fontsize=10)
-        else:
-            ax.set_xlabel("Years", fontsize=12)
-
-    plt.tight_layout()
-    st.pyplot(fig)
-
-    # combine and download
-    if data_to_download:
-        combined_data = pd.concat(data_to_download, ignore_index=True)
-        csv_data = combined_data.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "📥 Download Estimates as CSV",
-            data=csv_data,
-            file_name="predictions.csv",
-            mime="text/csv"
-        )
-
-# ---------------- Data sources ----------------
-@st.cache_data
-def load_remote_bank():
-    remote_url = "https://raw.githubusercontent.com/Olatundemi/MalariaEmulator/main/test/ANC_Simulation_1000_test_runs.csv"
-    df = pd.read_csv(remote_url)
-    if 'prev_true' not in df.columns:
-        raise ValueError("remote_url must contain 'prev_true' column")
-    return df
