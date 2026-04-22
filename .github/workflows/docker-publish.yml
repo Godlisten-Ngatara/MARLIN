@@ -3,15 +3,13 @@ name: Build and Push Image
 # Tier 1 & 2: Triggered on every push to main
 on:
   push:
-    branches: [dev, main]
+    branches: [main]
     paths:
       - "dhis2_src/**"
       - "src/**"
       - "marlin_dhis2.py"
       - "requirements.txt"
       - "Dockerfile"
-    tags: ["v*"] # Tier 3: Also triggered when a version tag is pushed
-
 env:
   IMAGE: ghcr.io/godlisten-ngatara/marlin/marlin-dhis2-app
 

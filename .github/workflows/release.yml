@@ -14,10 +14,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history needed to read commits between tags
+          fetch-depth: 0
 
-      - name: Generate changelog and create release
-        uses: googleapis/release-please-action@v4
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "tag=$PREV" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          PREV="${{ steps.prev_tag.outputs.tag }}"
+
+          if [ -z "$PREV" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV}..HEAD"
+          fi
+
+          # Group commits by type
+          {
+            echo "## What's Changed in $TAG"
+            echo ""
+
+            FEATS=$(git log $RANGE --pretty=format:"%s (%h)" --grep="^feat:" | sed 's/^feat: //')
+            if [ -n "$FEATS" ]; then
+              echo "### Features"
+              echo "$FEATS" | while read line; do echo "- $line"; done
+              echo ""
+            fi
+
+            FIXES=$(git log $RANGE --pretty=format:"%s (%h)" --grep="^fix:" | sed 's/^fix: //')
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo "$FIXES" | while read line; do echo "- $line"; done
+              echo ""
+            fi
+
+            PERFS=$(git log $RANGE --pretty=format:"%s (%h)" --grep="^perf:" | sed 's/^perf: //')
+            if [ -n "$PERFS" ]; then
+              echo "### Performance"
+              echo "$PERFS" | while read line; do echo "- $line"; done
+              echo ""
+            fi
+
+            OTHERS=$(git log $RANGE --pretty=format:"%s (%h)" --grep="^chore:\|^refactor:\|^ci:\|^build:" | sed 's/^[a-z]*: //')
+            if [ -n "$OTHERS" ]; then
+              echo "### Other"
+              echo "$OTHERS" | while read line; do echo "- $line"; done
+              echo ""
+            fi
+
+            echo "**Full diff:** https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+          } > changelog.md
+
+          cat changelog.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          release-type: python 
-          token: ${{ secrets.GITHUB_TOKEN }}
+          body_path: changelog.md
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
