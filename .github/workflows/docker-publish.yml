@@ -4,6 +4,12 @@ name: Build and Push Image
 on:
   push:
     branches: [dev, main]
+    paths:
+      - "dhis2_src/**"
+      - "src/**"
+      - "marlin_dhis2.py"
+      - "requirements.txt"
+      - "Dockerfile"
     tags: ["v*"] # Tier 3: Also triggered when a version tag is pushed
 
 env:
