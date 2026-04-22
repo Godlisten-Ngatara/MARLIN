@@ -1,0 +1,23 @@
+# .github/workflows/release.yml
+name: Generate Release Notes
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history needed to read commits between tags
+
+      - name: Generate changelog and create release
+        uses: googleapis/release-please-action@v4
+        with:
+          release-type: python 
+          token: ${{ secrets.GITHUB_TOKEN }}
