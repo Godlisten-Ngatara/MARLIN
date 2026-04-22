@@ -1,0 +1,48 @@
+name: Build and Push Image
+
+# Tier 1 & 2: Triggered on every push to main
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dhis2_src/**"
+      - "src/**"
+      - "marlin_dhis2.py"
+      - "requirements.txt"
+      - "Dockerfile"
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/marlin-dhis2-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and tag image
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+
+          # Always: latest + SHA
+          docker build -t $IMAGE:latest -t $IMAGE:sha-$SHORT_SHA .
+          docker push $IMAGE:latest
+          docker push $IMAGE:sha-$SHORT_SHA
+
+          # If this is a version tag (e.g. v1.3.0), also apply semver tag
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            docker tag $IMAGE:latest $IMAGE:$VERSION
+            docker push $IMAGE:$VERSION
+            echo "Tagged release: $IMAGE:$VERSION"
+          fi
