@@ -60,7 +60,7 @@ jobs:
               echo ""
             fi
 
-            OTHERS=$(git log $RANGE --pretty=format:"%s (%h)" --grep="^chore:\|^refactor:\|^ci:\|^build:" | sed 's/^[a-z]*: //')
+            OTHERS=$(git log $RANGE -E --pretty=format:"%s (%h)" --grep="^(chore|refactor|ci|build):" | sed 's/^[a-z]*: //')
             if [ -n "$OTHERS" ]; then
               echo "### Other"
               echo "$OTHERS" | while read line; do echo "- $line"; done
