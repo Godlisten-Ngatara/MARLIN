@@ -67,7 +67,11 @@ jobs:
               echo ""
             fi
 
-            echo "**Full diff:** https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+            if [ -n "$PREV" ]; then
+              echo "**Full diff:** https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+            else
+              echo "**Full history:** https://github.com/${{ github.repository }}/commits/${TAG}"
+            fi
           } > changelog.md
 
           cat changelog.md
