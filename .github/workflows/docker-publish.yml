@@ -11,7 +11,7 @@ on:
       - "requirements.txt"
       - "Dockerfile"
 env:
-  IMAGE: ghcr.io/godlisten-ngatara/marlin/marlin-dhis2-app
+  IMAGE: ghcr.io/${{ github.repository }}/marlin-dhis2-app
 
 jobs:
   build:
