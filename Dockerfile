@@ -1,23 +1,40 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1.7
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ARG PYTHON_VERSION=3.11-slim-bookworm
+
+# ---------- Build stage ----------
+FROM python:${PYTHON_VERSION} AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-COPY . .
+# ---------- Runtime stage ----------
+FROM python:${PYTHON_VERSION} AS runtime
 
-# Create a non-root user and give it ownership of the application directory
-RUN useradd -m appuser && chown -R appuser /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
 
-# Switch to the non-root user for running the application
+RUN useradd -m -u 1001 appuser
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=appuser:appuser . .
+
 USER appuser
 
 EXPOSE 8080
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/').status==200 else 1)"
+
 CMD ["uvicorn", "marlin_dhis2:app", "--host", "0.0.0.0", "--port", "8080"]
-
-
